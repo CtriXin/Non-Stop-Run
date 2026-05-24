@@ -54,6 +54,9 @@ def start_command(args: argparse.Namespace) -> int:
                 completion_gate=args.completion_gate,
                 gate_scope=args.gate_scope,
                 gate_quorum=args.gate_quorum,
+                max_cost_usd=args.max_cost_usd,
+                max_tokens=args.max_tokens,
+                auto_rollback=args.auto_rollback,
             )
         )
     except ValueError as exc:
@@ -172,6 +175,29 @@ def learn_command(args: argparse.Namespace) -> int:
     )
 
 
+def learn_load_command(args: argparse.Namespace) -> int:
+    return _print(
+        _runtime(args).learn_load(
+            scope=args.scope,
+            tags=args.tag,
+            limit=args.limit,
+        )
+    )
+
+
+def cost_update_command(args: argparse.Namespace) -> int:
+    return _print(
+        _runtime(args).cost_update(
+            tokens=args.tokens,
+            cost_usd=args.cost_usd,
+        )
+    )
+
+
+def slice_rollback_command(args: argparse.Namespace) -> int:
+    return _print(_runtime(args).slice_rollback())
+
+
 def validate_command(args: argparse.Namespace) -> int:
     return _print(
         _runtime(args).validate_command(
@@ -243,6 +269,18 @@ def commit_gate_command(args: argparse.Namespace) -> int:
     )
 
 
+def gate_run_command(args: argparse.Namespace) -> int:
+    try:
+        return _print(
+            _runtime(args).gate_run(
+                checks=args.check,
+                timeout=args.timeout,
+            )
+        )
+    except ValueError as exc:
+        return _print({"ok": False, "error": str(exc)})
+
+
 def add_common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--session-id")
     parser.add_argument("--path")
@@ -289,6 +327,9 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--completion-gate", default="", choices=["", "audit"])
     start.add_argument("--gate-scope", default="")
     start.add_argument("--gate-quorum", type=int, default=0)
+    start.add_argument("--max-cost-usd", type=float, default=0.0, help="Max total cost in USD (0=unlimited)")
+    start.add_argument("--max-tokens", type=int, default=0, help="Max total tokens (0=unlimited)")
+    start.add_argument("--auto-rollback", action="store_true", help="Auto git reset on failed slice")
     start.set_defaults(func=start_command)
 
     begin = sub.add_parser("begin-slice")
@@ -388,6 +429,23 @@ def build_parser() -> argparse.ArgumentParser:
     learn.add_argument("--conflicts-with", action="append", default=[])
     learn.set_defaults(func=learn_command)
 
+    learn_load = sub.add_parser("learn-load")
+    add_common(learn_load)
+    learn_load.add_argument("--scope", default="", choices=["repo", "project", "provider", "domain", "global", "run"])
+    learn_load.add_argument("--tag", action="append", default=[])
+    learn_load.add_argument("--limit", type=int, default=10)
+    learn_load.set_defaults(func=learn_load_command)
+
+    cost_update = sub.add_parser("cost-update")
+    add_common(cost_update)
+    cost_update.add_argument("--tokens", type=int, default=0, help="Tokens to add")
+    cost_update.add_argument("--cost-usd", type=float, default=0.0, help="Cost in USD to add")
+    cost_update.set_defaults(func=cost_update_command)
+
+    rollback = sub.add_parser("slice-rollback")
+    add_common(rollback)
+    rollback.set_defaults(func=slice_rollback_command)
+
     validate = sub.add_parser("validate")
     add_common(validate)
     validate.add_argument("--command", required=True)
@@ -444,6 +502,12 @@ def build_parser() -> argparse.ArgumentParser:
     commit.add_argument("--message", default="")
     commit.add_argument("--owned-file", action="append", default=[])
     commit.set_defaults(func=commit_gate_command)
+
+    gate_run = sub.add_parser("gate-run")
+    add_common(gate_run)
+    gate_run.add_argument("--check", action="append", default=[], help="Run only named checks (repeatable)")
+    gate_run.add_argument("--timeout", type=int, default=120, help="Default timeout per check in seconds")
+    gate_run.set_defaults(func=gate_run_command)
 
     return parser
 

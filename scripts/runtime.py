@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 import subprocess
 from html import escape
 from pathlib import Path
@@ -13,6 +14,7 @@ from state import (
     append_jsonl,
     clean_list,
     clean_string,
+    global_learnings_path,
     default_project_root,
     default_state,
     load_state,
@@ -262,6 +264,34 @@ def _event_summaries(path: Path, *, limit: int) -> list[str]:
     return summaries
 
 
+def _clean_gate_checks(checks: Any) -> list[dict[str, Any]]:
+    if not isinstance(checks, list):
+        return []
+    result = []
+    for item in checks:
+        if not isinstance(item, dict):
+            continue
+        name = clean_string(item.get("name"))
+        command = clean_string(item.get("command"))
+        if not name or not command:
+            continue
+        entry: dict[str, Any] = {"name": name, "command": command}
+        timeout = item.get("timeout")
+        if timeout is not None:
+            try:
+                entry["timeout"] = max(1, int(timeout))
+            except Exception:
+                pass
+        pass_pattern = clean_string(item.get("pass_pattern"))
+        if pass_pattern:
+            entry["pass_pattern"] = pass_pattern
+        fail_pattern = clean_string(item.get("fail_pattern"))
+        if fail_pattern:
+            entry["fail_pattern"] = fail_pattern
+        result.append(entry)
+    return result
+
+
 def _clean_slot(data: dict[str, Any], path: Path) -> dict[str, Any]:
     name = clean_string(data.get("name"))
     aliases = clean_list(data.get("aliases"))
@@ -289,6 +319,7 @@ def _clean_slot(data: dict[str, Any], path: Path) -> dict[str, Any]:
         "default_max_iterations": default_max_iterations,
         "run_log_hint": clean_string(data.get("run_log_hint")),
         "safety_notes": clean_list(data.get("safety_notes")),
+        "gate_checks": _clean_gate_checks(data.get("gate_checks")),
         "path": str(path),
     }
 
@@ -391,6 +422,9 @@ class NSRRuntime:
         completion_gate: str = "",
         gate_scope: str = "",
         gate_quorum: int = 0,
+        max_cost_usd: float = 0.0,
+        max_tokens: int = 0,
+        auto_rollback: bool = False,
     ) -> dict[str, Any]:
         profile = _resolve_slot(slot)
         if profile:
@@ -430,6 +464,7 @@ class NSRRuntime:
                 or "hands-off",
                 "commit_policy": clean_string(commit_policy).lower() or "auto",
                 "max_iterations": int(max_iterations or 20),
+                "auto_rollback": bool(auto_rollback),
                 "confirmed": True,
             }
         )
@@ -445,6 +480,8 @@ class NSRRuntime:
                     "checked_at": "",
                     "reasons": [],
                     "evidence": [],
+                    "checks": {},
+                    "checks_config": profile.get("gate_checks", []) if profile else [],
                 }
             )
         else:
@@ -459,6 +496,8 @@ class NSRRuntime:
                     "checked_at": "",
                     "reasons": [],
                     "evidence": [],
+                    "checks": {},
+                    "checks_config": profile.get("gate_checks", []) if profile else [],
                 }
             )
         state["loop"].update(
@@ -481,6 +520,12 @@ class NSRRuntime:
                     "validation": "",
                     "debugger": "",
                     "should_fully_stop": False,
+                },
+                "cost": {
+                    "total_tokens": 0,
+                    "total_cost_usd": 0.0,
+                    "max_tokens": max(0, int(max_tokens)),
+                    "max_cost_usd": max(0.0, float(max_cost_usd)),
                 },
             }
         )
@@ -515,9 +560,13 @@ class NSRRuntime:
         project_root = state["runtime"]["project_root"] or self.project_root
         baseline: list[str] = []
         try:
-            baseline = _dirty_paths(_git_root(project_root))
+            repo_root = _git_root(project_root)
+            baseline = _dirty_paths(repo_root)
+            head_ref = _run_git(repo_root, ["rev-parse", "HEAD"])
+            slice_start_ref = head_ref.stdout.strip() if head_ref.returncode == 0 else ""
         except Exception:
             baseline = []
+            slice_start_ref = ""
         state["runtime"]["mode"] = "active"
         state["loop"].update(
             {
@@ -529,6 +578,7 @@ class NSRRuntime:
                 "touched_files": [],
                 "dirty_baseline": baseline,
                 "dirty_current": baseline,
+                "slice_start_ref": slice_start_ref,
                 "last_result": {
                     "success": False,
                     "summary": "",
@@ -805,6 +855,23 @@ class NSRRuntime:
                 "new learnings. Relaunch with a narrower slice or close the goal."
             )
             state["loop"]["next_action"] = "Resolve the no-op iteration before continuing."
+        if not success and state["goal"].get("auto_rollback"):
+            rollback_result = self.slice_rollback()
+            if rollback_result.get("ok"):
+                result["rollback"] = rollback_result
+        cost = state["loop"].get("cost", {})
+        max_tokens = int(cost.get("max_tokens", 0))
+        max_cost = float(cost.get("max_cost_usd", 0.0))
+        total_tokens = int(cost.get("total_tokens", 0))
+        total_cost = float(cost.get("total_cost_usd", 0.0))
+        if max_tokens > 0 and total_tokens >= max_tokens:
+            state["loop"]["status"] = "stopped"
+            state["loop"]["next_action"] = f"Cost guard: token limit reached ({total_tokens}/{max_tokens})"
+            state["quality"]["blocker"] = state["loop"]["next_action"]
+        elif max_cost > 0 and total_cost >= max_cost:
+            state["loop"]["status"] = "stopped"
+            state["loop"]["next_action"] = f"Cost guard: cost limit reached (${total_cost:.4f}/${max_cost:.4f})"
+            state["quality"]["blocker"] = state["loop"]["next_action"]
         self._save(state)
         notes_path = self._append_notes(state, result)
         event = self.event(
@@ -819,6 +886,57 @@ class NSRRuntime:
             "result": result,
             "notes_path": notes_path,
             "event": event.get("event", {}),
+        }
+
+    def cost_update(
+        self,
+        *,
+        tokens: int = 0,
+        cost_usd: float = 0.0,
+    ) -> dict[str, Any]:
+        state = self._state_or_default()
+        cost = state["loop"].setdefault("cost", {
+            "total_tokens": 0,
+            "total_cost_usd": 0.0,
+            "max_tokens": 0,
+            "max_cost_usd": 0.0,
+        })
+        cost["total_tokens"] = int(cost.get("total_tokens", 0)) + max(0, int(tokens))
+        cost["total_cost_usd"] = round(float(cost.get("total_cost_usd", 0.0)) + max(0.0, float(cost_usd)), 6)
+        self._save(state)
+        return {
+            "ok": True,
+            "action": "cost_update",
+            "total_tokens": cost["total_tokens"],
+            "total_cost_usd": cost["total_cost_usd"],
+            "max_tokens": cost.get("max_tokens", 0),
+            "max_cost_usd": cost.get("max_cost_usd", 0.0),
+        }
+
+    def slice_rollback(self) -> dict[str, Any]:
+        state = self._state_or_default()
+        project_root = state["runtime"].get("project_root") or self.project_root
+        slice_ref = clean_string(state["loop"].get("slice_start_ref", ""))
+        if not slice_ref:
+            return {"ok": False, "action": "slice_rollback", "error": "no slice_start_ref recorded"}
+        try:
+            repo_root = _git_root(project_root)
+        except Exception as exc:
+            return {"ok": False, "action": "slice_rollback", "error": str(exc)}
+        stash = _run_git(repo_root, ["stash", "push", "-m", "nsr-auto-rollback"])
+        if stash.returncode != 0:
+            return {"ok": False, "action": "slice_rollback", "error": stash.stderr.strip() or "git stash failed"}
+        reset = _run_git(repo_root, ["reset", "--hard", slice_ref])
+        if reset.returncode != 0:
+            return {"ok": False, "action": "slice_rollback", "error": reset.stderr.strip() or "git reset failed"}
+        state["loop"]["dirty_current"] = _dirty_paths(repo_root)
+        self._save(state)
+        self.event("slice_rollback", f"Rolled back to {slice_ref[:12]}", state=state)
+        return {
+            "ok": True,
+            "action": "slice_rollback",
+            "ref": slice_ref,
+            "stash": stash.stdout.strip(),
         }
 
     def audit_gate(
@@ -1111,6 +1229,95 @@ class NSRRuntime:
             "next_action": state["loop"].get("next_action", ""),
         }
 
+    def gate_run(
+        self,
+        *,
+        checks: Optional[list[str]] = None,
+        timeout: int = 120,
+    ) -> dict[str, Any]:
+        state = self._state_or_default()
+        project_root = state["runtime"].get("project_root") or self.project_root
+        configs = state["gate"].get("checks_config", [])
+        if not configs:
+            return {"ok": True, "action": "gate_run", "message": "no gate checks configured", "results": {}}
+        filter_names = {clean_string(n).lower() for n in (checks or []) if clean_string(n)}
+        results: dict[str, Any] = {}
+        all_pass = True
+        for cfg in configs:
+            name = clean_string(cfg.get("name", ""))
+            if filter_names and name.lower() not in filter_names:
+                continue
+            command = clean_string(cfg.get("command", ""))
+            if not command:
+                results[name] = {"status": "skip", "reason": "no command"}
+                continue
+            check_timeout = int(cfg.get("timeout", timeout))
+            started_at = now_iso()
+            timed_out = False
+            try:
+                proc = subprocess.run(
+                    command,
+                    shell=True,
+                    cwd=project_root,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=check_timeout,
+                    check=False,
+                )
+                stdout = proc.stdout or ""
+                stderr = proc.stderr or ""
+                exit_code = proc.returncode
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                stdout = ""
+                stderr = f"timed out after {check_timeout}s"
+                exit_code = -1
+            except Exception as exc:
+                stdout = ""
+                stderr = str(exc)
+                exit_code = -1
+            status = "pass"
+            reason = ""
+            if timed_out:
+                status = "fail"
+                reason = f"timed out after {check_timeout}s"
+            elif exit_code != 0:
+                fail_pattern = clean_string(cfg.get("fail_pattern", ""))
+                if fail_pattern and re.search(fail_pattern, stdout + stderr):
+                    status = "fail"
+                    reason = f"exit {exit_code}, matched fail_pattern"
+                else:
+                    status = "fail"
+                    reason = f"exit code {exit_code}"
+            else:
+                pass_pattern = clean_string(cfg.get("pass_pattern", ""))
+                if pass_pattern and not re.search(pass_pattern, stdout):
+                    status = "fail"
+                    reason = f"exit 0 but output did not match pass_pattern"
+            if status == "fail":
+                all_pass = False
+            results[name] = {
+                "status": status,
+                "exit_code": exit_code,
+                "reason": reason,
+                "started_at": started_at,
+                "finished_at": now_iso(),
+                "stdout_tail": stdout[-500:] if stdout else "",
+                "stderr_tail": stderr[-500:] if stderr else "",
+            }
+        state["gate"]["checks"] = results
+        self._save(state)
+        summary_parts = [f"{k}: {v['status']}" for k, v in results.items()]
+        summary = "Gate checks: " + ", ".join(summary_parts)
+        self.event("gate_run", summary, state=state)
+        return {
+            "ok": all_pass,
+            "action": "gate_run",
+            "results": results,
+            "all_pass": all_pass,
+        }
+
     def learn(
         self,
         *,
@@ -1165,9 +1372,12 @@ class NSRRuntime:
             "duplicate": duplicate,
             "promote_candidate": bool(promote_candidate),
             "slice_id": clean_string(state["loop"].get("current_slice_id", "")),
+            "session_id": self.identity.session_id,
         }
         if not duplicate:
             append_jsonl(self.identity.session_dir / "learnings.jsonl", entry)
+        if not duplicate and not self._global_learning_exists(clean_fingerprint):
+            self._write_global_learning(entry)
         state["trace"]["latest_learning"] = entry["summary"]
         self._save(state)
         self._append_learning_note(state, entry)
@@ -1695,6 +1905,58 @@ class NSRRuntime:
             if row.get("fingerprint") == fingerprint:
                 return True
         return False
+
+    def _global_learning_exists(self, fingerprint: str) -> bool:
+        path = global_learnings_path()
+        if not path.is_file():
+            return False
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if row.get("fingerprint") == fingerprint:
+                return True
+        return False
+
+    def _write_global_learning(self, entry: dict[str, Any]) -> None:
+        path = global_learnings_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        append_jsonl(path, entry)
+
+    def learn_load(
+        self,
+        *,
+        scope: str = "",
+        tags: Optional[list[str]] = None,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        path = global_learnings_path()
+        if not path.is_file():
+            return {"ok": True, "action": "learn_load", "learnings": [], "count": 0}
+        clean_scope = clean_string(scope).lower()
+        clean_tags = {t.lower() for t in (tags or []) if clean_string(t)}
+        results: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                row = json.loads(line)
+            except Exception:
+                continue
+            if clean_scope and clean_string(row.get("scope", "")).lower() != clean_scope:
+                continue
+            if clean_tags:
+                row_tags = {t.lower() for t in row.get("tags", []) if isinstance(t, str)}
+                if not clean_tags.intersection(row_tags):
+                    continue
+            results.append(row)
+            if len(results) >= limit:
+                break
+        return {
+            "ok": True,
+            "action": "learn_load",
+            "learnings": results,
+            "count": len(results),
+        }
 
     def _write_exit_summary(self, state: dict[str, Any], summary: str = "") -> str:
         timestamp = now_iso().replace(":", "").replace("+", "Z")

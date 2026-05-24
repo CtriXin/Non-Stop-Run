@@ -51,6 +51,10 @@ def sessions_root() -> Path:
     return nsr_root() / "sessions"
 
 
+def global_learnings_path() -> Path:
+    return nsr_root() / "learnings" / "global.jsonl"
+
+
 def default_project_root(project_root: Optional[str]) -> str:
     if project_root:
         return str(Path(project_root).expanduser().resolve())
@@ -159,6 +163,12 @@ def default_state(session_id: str, project_root: str) -> dict[str, Any]:
                 "debugger": "",
                 "should_fully_stop": False,
             },
+            "cost": {
+                "total_tokens": 0,
+                "total_cost_usd": 0.0,
+                "max_tokens": 0,
+                "max_cost_usd": 0.0,
+            },
         },
         "quality": {
             "validation_status": "unknown",
@@ -178,6 +188,7 @@ def default_state(session_id: str, project_root: str) -> dict[str, Any]:
             "checked_at": "",
             "reasons": [],
             "evidence": [],
+            "checks": {},
         },
         "trace": {
             "latest_event": "",
