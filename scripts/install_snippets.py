@@ -8,14 +8,14 @@ ROOT = Path(__file__).resolve().parent
 CLAUDE_HOOK = ROOT / "claude_hook.py"
 CODEX_HOOK = ROOT / "codex_hook.py"
 CODEX_EVENTS = {
-    "SessionStart": "Loading Looop context",
-    "UserPromptSubmit": "Loading Looop context",
-    "PermissionRequest": "Recording Looop permission gate",
-    "PreToolUse": "Recording Looop tool activity",
-    "PostToolUse": "Recording Looop tool activity",
-    "PreCompact": "Recording Looop compact checkpoint",
-    "PostCompact": "Recording Looop compact checkpoint",
-    "Stop": "Checking Looop stop guard",
+    "SessionStart": "Loading NSR context",
+    "UserPromptSubmit": "Loading NSR context",
+    "PermissionRequest": "Recording NSR permission gate",
+    "PreToolUse": "Recording NSR tool activity",
+    "PostToolUse": "Recording NSR tool activity",
+    "PreCompact": "Recording NSR compact checkpoint",
+    "PostCompact": "Recording NSR compact checkpoint",
+    "Stop": "Checking NSR stop guard",
 }
 CODEX_MATCHERS = {
     "SessionStart": "startup|resume|clear",
@@ -82,7 +82,7 @@ def codex_snippet() -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Print Looop hook config snippets.")
+    parser = argparse.ArgumentParser(description="Print NSR hook config snippets.")
     parser.add_argument("--host", choices=["claude", "codex", "all"], default="all")
     args = parser.parse_args()
 

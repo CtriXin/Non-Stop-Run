@@ -236,6 +236,16 @@ def _detected_model() -> str:
     return ""
 
 
+def _detected_cli() -> str:
+    if clean_string(os.environ.get("CLAUDE_SESSION_ID", "")):
+        return "claude-code"
+    if clean_string(os.environ.get("CODEX_THREAD_ID", "")):
+        return "codex"
+    if clean_string(os.environ.get("OPENCODE_SESSION_ID", "")):
+        return "opencode"
+    return "unknown"
+
+
 def _event_summaries(path: Path, *, limit: int) -> list[str]:
     if limit <= 0 or not path.is_file():
         return []
@@ -1427,6 +1437,7 @@ class NSRRuntime:
         }
         if not dirty:
             result["reasons"].append("no dirty files")
+            self._save(state)
             return result
         if state["goal"].get("commit_policy") != "auto":
             result["reasons"].append("commit policy is not auto")
@@ -1631,7 +1642,8 @@ class NSRRuntime:
         lines.append("- Key learnings:")
         for item in result["key_learnings"] or ["(none)"]:
             lines.append(f"  - {item}")
-        path.open("a", encoding="utf-8").write("\n".join(lines) + "\n")
+        with path.open("a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
         return str(path)
 
     def _append_learning_note(self, state: dict[str, Any], entry: dict[str, Any]) -> str:
@@ -1667,7 +1679,8 @@ class NSRRuntime:
             f"- Duplicate: {str(entry['duplicate']).lower()}",
             f"- Promote candidate: {str(entry['promote_candidate']).lower()}",
         ]
-        path.open("a", encoding="utf-8").write("\n".join(lines) + "\n")
+        with path.open("a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
         return str(path)
 
     def _learning_exists(self, fingerprint: str) -> bool:
@@ -1812,7 +1825,7 @@ class NSRRuntime:
             or "NSR run",
             "status": status,
             "branch": branch,
-            "cli": "codex",
+            "cli": _detected_cli(),
             "decisions": decisions,
             "changes": changes,
             "findings": findings,

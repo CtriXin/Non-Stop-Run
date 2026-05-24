@@ -32,26 +32,32 @@ def slots_command(args: argparse.Namespace) -> int:
 
 
 def slot_info_command(args: argparse.Namespace) -> int:
-    return _print(_runtime(args).slot_info(args.name))
+    try:
+        return _print(_runtime(args).slot_info(args.name))
+    except ValueError as exc:
+        return _print({"ok": False, "error": str(exc)})
 
 
 def start_command(args: argparse.Namespace) -> int:
-    return _print(
-        _runtime(args).start(
-            objective=args.objective,
-            target_phase=args.target_phase,
-            done_when=args.done_when,
-            owner_agent=args.owner_agent,
-            role=args.role,
-            execution_mode=args.execution_mode,
-            commit_policy=args.commit_policy,
-            max_iterations=args.max_iterations,
-            slot=args.slot,
-            completion_gate=args.completion_gate,
-            gate_scope=args.gate_scope,
-            gate_quorum=args.gate_quorum,
+    try:
+        return _print(
+            _runtime(args).start(
+                objective=args.objective,
+                target_phase=args.target_phase,
+                done_when=args.done_when,
+                owner_agent=args.owner_agent,
+                role=args.role,
+                execution_mode=args.execution_mode,
+                commit_policy=args.commit_policy,
+                max_iterations=args.max_iterations,
+                slot=args.slot,
+                completion_gate=args.completion_gate,
+                gate_scope=args.gate_scope,
+                gate_quorum=args.gate_quorum,
+            )
         )
-    )
+    except ValueError as exc:
+        return _print({"ok": False, "error": str(exc)})
 
 
 def begin_slice_command(args: argparse.Namespace) -> int:
@@ -244,7 +250,7 @@ def add_common(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Looop controller.")
+    parser = argparse.ArgumentParser(description="NSR controller.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     current = sub.add_parser("current")

@@ -34,14 +34,14 @@ def clean_list(values: object) -> list[str]:
 
 def real_home() -> Path:
     home = Path(os.environ.get("HOME", str(Path.home()))).expanduser()
-    match = re.match(r"^(/Users/[^/]+)/\.config/mms/", str(home))
+    match = re.match(r"^(/(?:Users|home)/[^/]+)/\.config/mms/", str(home))
     if match:
         return Path(match.group(1))
     return home
 
 
 def nsr_root() -> Path:
-    value = clean_string(os.environ.get("LOOOP_HOME", ""))
+    value = clean_string(os.environ.get("NSR_HOME", os.environ.get("LOOOP_HOME", "")))
     if value:
         return Path(value).expanduser().resolve()
     return (real_home() / ".nsr").resolve()
@@ -61,7 +61,7 @@ def default_project_root(project_root: Optional[str]) -> str:
 
 
 def default_session_id(project_root: str) -> str:
-    for key in ("LOOOP_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID"):
+    for key in ("NSR_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID"):
         value = clean_string(os.environ.get(key, ""))
         if value:
             return value
@@ -318,6 +318,5 @@ def save_state(identity: SessionIdentity, state: dict[str, Any]) -> None:
 
 def append_jsonl(path: Path, entry: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.open("a", encoding="utf-8").write(
-        json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n"
-    )
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
