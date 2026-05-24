@@ -14,7 +14,6 @@ from state import (
     append_jsonl,
     clean_list,
     clean_string,
-    global_learnings_path,
     default_project_root,
     default_state,
     load_state,
@@ -422,8 +421,6 @@ class NSRRuntime:
         completion_gate: str = "",
         gate_scope: str = "",
         gate_quorum: int = 0,
-        max_cost_usd: float = 0.0,
-        max_tokens: int = 0,
         auto_rollback: bool = False,
     ) -> dict[str, Any]:
         profile = _resolve_slot(slot)
@@ -520,12 +517,6 @@ class NSRRuntime:
                     "validation": "",
                     "debugger": "",
                     "should_fully_stop": False,
-                },
-                "cost": {
-                    "total_tokens": 0,
-                    "total_cost_usd": 0.0,
-                    "max_tokens": max(0, int(max_tokens)),
-                    "max_cost_usd": max(0.0, float(max_cost_usd)),
                 },
             }
         )
@@ -855,23 +846,40 @@ class NSRRuntime:
                 "new learnings. Relaunch with a narrower slice or close the goal."
             )
             state["loop"]["next_action"] = "Resolve the no-op iteration before continuing."
+        if success:
+            state["loop"]["consecutive_failures"] = 0
+            state["loop"]["failure_signatures"] = []
+        else:
+            state["loop"]["consecutive_failures"] = int(state["loop"].get("consecutive_failures", 0)) + 1
+            sig = f"{clean_string(validation)[:80]}|{clean_string(debugger)[:80]}"
+            sigs = clean_list(state["loop"].get("failure_signatures"))
+            sigs.append(sig)
+            state["loop"]["failure_signatures"] = sigs[-5:]
+            consec = state["loop"]["consecutive_failures"]
+            if consec >= 3:
+                repeated = len(set(sigs)) <= 2 and len(sigs) >= 3
+                if repeated:
+                    state["loop"]["status"] = "blocked"
+                    state["quality"]["blocker"] = (
+                        f"Smart stop: {consec} consecutive failures with the same pattern. "
+                        "Change approach or close the goal."
+                    )
+                    state["loop"]["next_action"] = (
+                        "Reassess the approach — repeated failures indicate a systemic issue."
+                    )
+                elif consec >= 5:
+                    state["loop"]["status"] = "blocked"
+                    state["quality"]["blocker"] = (
+                        f"Smart stop: {consec} consecutive failures. "
+                        "Consider stopping or fundamentally changing approach."
+                    )
+                    state["loop"]["next_action"] = (
+                        "Stop or redesign the strategy — too many consecutive failures."
+                    )
         if not success and state["goal"].get("auto_rollback"):
             rollback_result = self.slice_rollback()
             if rollback_result.get("ok"):
                 result["rollback"] = rollback_result
-        cost = state["loop"].get("cost", {})
-        max_tokens = int(cost.get("max_tokens", 0))
-        max_cost = float(cost.get("max_cost_usd", 0.0))
-        total_tokens = int(cost.get("total_tokens", 0))
-        total_cost = float(cost.get("total_cost_usd", 0.0))
-        if max_tokens > 0 and total_tokens >= max_tokens:
-            state["loop"]["status"] = "stopped"
-            state["loop"]["next_action"] = f"Cost guard: token limit reached ({total_tokens}/{max_tokens})"
-            state["quality"]["blocker"] = state["loop"]["next_action"]
-        elif max_cost > 0 and total_cost >= max_cost:
-            state["loop"]["status"] = "stopped"
-            state["loop"]["next_action"] = f"Cost guard: cost limit reached (${total_cost:.4f}/${max_cost:.4f})"
-            state["quality"]["blocker"] = state["loop"]["next_action"]
         self._save(state)
         notes_path = self._append_notes(state, result)
         event = self.event(
@@ -886,31 +894,6 @@ class NSRRuntime:
             "result": result,
             "notes_path": notes_path,
             "event": event.get("event", {}),
-        }
-
-    def cost_update(
-        self,
-        *,
-        tokens: int = 0,
-        cost_usd: float = 0.0,
-    ) -> dict[str, Any]:
-        state = self._state_or_default()
-        cost = state["loop"].setdefault("cost", {
-            "total_tokens": 0,
-            "total_cost_usd": 0.0,
-            "max_tokens": 0,
-            "max_cost_usd": 0.0,
-        })
-        cost["total_tokens"] = int(cost.get("total_tokens", 0)) + max(0, int(tokens))
-        cost["total_cost_usd"] = round(float(cost.get("total_cost_usd", 0.0)) + max(0.0, float(cost_usd)), 6)
-        self._save(state)
-        return {
-            "ok": True,
-            "action": "cost_update",
-            "total_tokens": cost["total_tokens"],
-            "total_cost_usd": cost["total_cost_usd"],
-            "max_tokens": cost.get("max_tokens", 0),
-            "max_cost_usd": cost.get("max_cost_usd", 0.0),
         }
 
     def slice_rollback(self) -> dict[str, Any]:
@@ -1372,12 +1355,9 @@ class NSRRuntime:
             "duplicate": duplicate,
             "promote_candidate": bool(promote_candidate),
             "slice_id": clean_string(state["loop"].get("current_slice_id", "")),
-            "session_id": self.identity.session_id,
         }
         if not duplicate:
             append_jsonl(self.identity.session_dir / "learnings.jsonl", entry)
-        if not duplicate and not self._global_learning_exists(clean_fingerprint):
-            self._write_global_learning(entry)
         state["trace"]["latest_learning"] = entry["summary"]
         self._save(state)
         self._append_learning_note(state, entry)
@@ -1679,6 +1659,17 @@ class NSRRuntime:
                 dangerous.append(f"{rel_path} ({reason})")
         if dangerous:
             result["reasons"].append("dangerous files: " + ", ".join(dangerous))
+        gate_configs = state["gate"].get("checks_config", [])
+        if gate_configs:
+            gate_results = self.gate_run()
+            failed_checks = [
+                f"{name}: {info.get('reason', info.get('status', 'unknown'))}"
+                for name, info in gate_results.get("results", {}).items()
+                if info.get("status") == "fail"
+            ]
+            if failed_checks:
+                result["reasons"].append("gate checks failed: " + "; ".join(failed_checks))
+            result["gate_check_results"] = gate_results.get("results", {})
         if not result["reasons"]:
             result["can_commit"] = True
         if not auto_commit or not result["can_commit"]:
@@ -1721,12 +1712,35 @@ class NSRRuntime:
         events: list[str] = []
         if events_path.is_file():
             events = events_path.read_text(encoding="utf-8").splitlines()[-10:]
+        loop = state["loop"]
+        last = loop.get("last_result", {})
+        recovery_hint = ""
+        if loop.get("status") == "blocked":
+            if int(loop.get("consecutive_failures", 0)) >= 3:
+                recovery_hint = (
+                    "Multiple consecutive failures detected. "
+                    "Change approach before continuing."
+                )
+            elif not last.get("success") and last.get("key_changes_made"):
+                recovery_hint = (
+                    f"Last slice had changes but was marked failed: {last.get('summary', '')}. "
+                    "Review the diff and consider retrying with corrections."
+                )
+            elif not last.get("success") and not last.get("key_changes_made"):
+                recovery_hint = (
+                    "Last slice was a no-op. "
+                    "Pick a narrower, more concrete slice."
+                )
         return {
             "ok": True,
             "action": "recover",
             "state": self._summary("recover", state),
             "quality": state["quality"],
-            "loop": state["loop"],
+            "loop": loop,
+            "last_result": last,
+            "consecutive_failures": int(loop.get("consecutive_failures", 0)),
+            "auto_rollback": bool(state["goal"].get("auto_rollback")),
+            "recovery_hint": recovery_hint,
             "notes_path": str(self.identity.session_dir / "notes.md"),
             "learnings_path": str(self.identity.session_dir / "learnings.jsonl"),
             "recent_events": events,
@@ -1905,58 +1919,6 @@ class NSRRuntime:
             if row.get("fingerprint") == fingerprint:
                 return True
         return False
-
-    def _global_learning_exists(self, fingerprint: str) -> bool:
-        path = global_learnings_path()
-        if not path.is_file():
-            return False
-        for line in path.read_text(encoding="utf-8").splitlines():
-            try:
-                row = json.loads(line)
-            except Exception:
-                continue
-            if row.get("fingerprint") == fingerprint:
-                return True
-        return False
-
-    def _write_global_learning(self, entry: dict[str, Any]) -> None:
-        path = global_learnings_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        append_jsonl(path, entry)
-
-    def learn_load(
-        self,
-        *,
-        scope: str = "",
-        tags: Optional[list[str]] = None,
-        limit: int = 10,
-    ) -> dict[str, Any]:
-        path = global_learnings_path()
-        if not path.is_file():
-            return {"ok": True, "action": "learn_load", "learnings": [], "count": 0}
-        clean_scope = clean_string(scope).lower()
-        clean_tags = {t.lower() for t in (tags or []) if clean_string(t)}
-        results: list[dict[str, Any]] = []
-        for line in path.read_text(encoding="utf-8").splitlines():
-            try:
-                row = json.loads(line)
-            except Exception:
-                continue
-            if clean_scope and clean_string(row.get("scope", "")).lower() != clean_scope:
-                continue
-            if clean_tags:
-                row_tags = {t.lower() for t in row.get("tags", []) if isinstance(t, str)}
-                if not clean_tags.intersection(row_tags):
-                    continue
-            results.append(row)
-            if len(results) >= limit:
-                break
-        return {
-            "ok": True,
-            "action": "learn_load",
-            "learnings": results,
-            "count": len(results),
-        }
 
     def _write_exit_summary(self, state: dict[str, Any], summary: str = "") -> str:
         timestamp = now_iso().replace(":", "").replace("+", "Z")

@@ -54,8 +54,6 @@ def start_command(args: argparse.Namespace) -> int:
                 completion_gate=args.completion_gate,
                 gate_scope=args.gate_scope,
                 gate_quorum=args.gate_quorum,
-                max_cost_usd=args.max_cost_usd,
-                max_tokens=args.max_tokens,
                 auto_rollback=args.auto_rollback,
             )
         )
@@ -171,25 +169,6 @@ def learn_command(args: argparse.Namespace) -> int:
             scope=args.scope,
             scope_key=args.scope_key,
             conflicts_with=args.conflicts_with,
-        )
-    )
-
-
-def learn_load_command(args: argparse.Namespace) -> int:
-    return _print(
-        _runtime(args).learn_load(
-            scope=args.scope,
-            tags=args.tag,
-            limit=args.limit,
-        )
-    )
-
-
-def cost_update_command(args: argparse.Namespace) -> int:
-    return _print(
-        _runtime(args).cost_update(
-            tokens=args.tokens,
-            cost_usd=args.cost_usd,
         )
     )
 
@@ -327,8 +306,6 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--completion-gate", default="", choices=["", "audit"])
     start.add_argument("--gate-scope", default="")
     start.add_argument("--gate-quorum", type=int, default=0)
-    start.add_argument("--max-cost-usd", type=float, default=0.0, help="Max total cost in USD (0=unlimited)")
-    start.add_argument("--max-tokens", type=int, default=0, help="Max total tokens (0=unlimited)")
     start.add_argument("--auto-rollback", action="store_true", help="Auto git reset on failed slice")
     start.set_defaults(func=start_command)
 
@@ -428,19 +405,6 @@ def build_parser() -> argparse.ArgumentParser:
     learn.add_argument("--scope-key", default="")
     learn.add_argument("--conflicts-with", action="append", default=[])
     learn.set_defaults(func=learn_command)
-
-    learn_load = sub.add_parser("learn-load")
-    add_common(learn_load)
-    learn_load.add_argument("--scope", default="", choices=["repo", "project", "provider", "domain", "global", "run"])
-    learn_load.add_argument("--tag", action="append", default=[])
-    learn_load.add_argument("--limit", type=int, default=10)
-    learn_load.set_defaults(func=learn_load_command)
-
-    cost_update = sub.add_parser("cost-update")
-    add_common(cost_update)
-    cost_update.add_argument("--tokens", type=int, default=0, help="Tokens to add")
-    cost_update.add_argument("--cost-usd", type=float, default=0.0, help="Cost in USD to add")
-    cost_update.set_defaults(func=cost_update_command)
 
     rollback = sub.add_parser("slice-rollback")
     add_common(rollback)
