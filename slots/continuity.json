@@ -1,0 +1,28 @@
+{
+  "name": "continuity",
+  "aliases": [
+    "offduty",
+    "onduty",
+    "shift-handover",
+    "fresh-session",
+    "handover-rollup"
+  ],
+  "description": "Shift-boundary continuity profile: fold docs, task progress, attempts, git status/diff evidence, and artifact refs into .agent.local/continuity checkpoints so a fresh session or another machine can continue real work without reading old chat.",
+  "owner_skill": "handover",
+  "owner_skill_path": "/Users/xin/auto-skills/shared-skills/handover/SKILL.md",
+  "schema": "agent.continuity.v1",
+  "default_target_phase": "continuity-checkpoint",
+  "default_done_when": "A fresh session can run onduty, read .agent.local/continuity/pickup.md plus the active checkpoint refs, inspect dirty diff evidence, and continue the next bounded slice without old chat context.",
+  "default_execution_mode": "companion",
+  "default_commit_policy": "manual",
+  "default_max_iterations": 4,
+  "run_log_hint": ".agent.local/continuity/pickup.md and .agent.local/continuity/checkpoints/<task-id>/",
+  "legacy_run_log_hint": ".ai/plan/handoff.md and .ai/plan/progress/<task-id>.md when --layout legacy-ai-plan is explicitly required",
+  "safety_notes": [
+    "Do not let hooks or side sessions take the repo-level active.json pointer unless they own the mainline.",
+    "Use checkpoints/<task-id>/ and sessions/<session-id>.jsonl for plan/review/executor side work.",
+    "Use --diff-mode patch only when preserving a dirty patch snapshot is intentional and safe.",
+    "Treat active.json and pickup.md as generated views; checkpoints and session JSONL are the source of truth.",
+    "Do not publish .agent.local/ to public repositories."
+  ]
+}

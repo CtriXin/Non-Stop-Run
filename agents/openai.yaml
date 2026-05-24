@@ -1,0 +1,4 @@
+name: nsr
+display_name: NSR
+short_description: Goal-driven execution loop with milestones, learning, recovery, and safe commits.
+default_prompt: "Use $nsr when this task should proceed toward a specified phase or milestone without repeated confirmation. Start or resume a NSR goal, choose hands-off or companion mode, split work into bounded slices, validate each slice, run a debugger pass, record iteration-result notes and evidence-backed learnings, auto-commit only self-owned validated changes, and write event/milestone/exit-summary records so the work can recover after interruption or compaction. Ask the user only for high-risk or genuinely blocked decisions."

@@ -1,0 +1,22 @@
+{
+  "name": "bugloop",
+  "aliases": [
+    "nightly-fix",
+    "nightly debug",
+    "nightly bug hunt"
+  ],
+  "description": "Critical bug hunt profile: find concrete high-severity bugs, fix minimally, validate, commit, and continue until a bounded confidence target or stop condition.",
+  "owner_skill": "bugloop",
+  "owner_skill_path": "/Users/xin/auto-skills/shared-skills/bugloop/SKILL.md",
+  "default_target_phase": "nightly-fix",
+  "default_done_when": ">=95% high-severity confidence, max cycles reached, or no plausible critical candidates remain.",
+  "default_execution_mode": "hands-off",
+  "default_commit_policy": "auto",
+  "default_max_iterations": 12,
+  "run_log_hint": ".ai/critical-debug/YYYY-MM-DD-nightly.md",
+  "safety_notes": [
+    "Never push, deploy, force-push, delete data, or change global config without explicit user authorization.",
+    "Commit only one confirmed and validated bug fix per commit.",
+    "Rollback failed attempts without touching unowned user changes."
+  ]
+}

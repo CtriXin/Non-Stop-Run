@@ -1,0 +1,24 @@
+{
+  "name": "audit",
+  "aliases": [
+    "code-audit",
+    "review-gate",
+    "audit gate",
+    "safety audit",
+    "multi-review"
+  ],
+  "description": "Audit/review-gate profile: define scope, gather evidence, run focused review lanes, fix or explicitly waive blockers, and stop only after quorum or documented residual risk.",
+  "owner_skill": "multi-review",
+  "owner_skill_path": "/Users/xin/auto-skills/shared-skills/multi-review/SKILL.md",
+  "default_target_phase": "audit-gate",
+  "default_done_when": "Review quorum is clear, all P0/P1 blockers are fixed or explicitly waived, validation evidence is recorded, and residual risk is documented.",
+  "default_execution_mode": "companion",
+  "default_commit_policy": "manual",
+  "default_max_iterations": 8,
+  "run_log_hint": ".ai/reviews/log/gate-<milestone>.json",
+  "safety_notes": [
+    "Never claim audit completion from self-review alone.",
+    "Any P0/P1 finding blocks the gate until fixed or explicitly waived.",
+    "Keep reviewer artifacts under the target repo root .ai/plan and .ai/reviews paths."
+  ]
+}

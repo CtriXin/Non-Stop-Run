@@ -1,0 +1,5 @@
+.mms/
+.omc/
+.ai/
+__pycache__/
+*.pyc
