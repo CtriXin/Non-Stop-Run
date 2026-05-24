@@ -120,6 +120,7 @@ def default_state(session_id: str, project_root: str) -> dict[str, Any]:
             "project_root": project_root,
             "created_at": timestamp,
             "updated_at": timestamp,
+            "started_at": "",
         },
         "goal": {
             "objective": "",
@@ -137,6 +138,7 @@ def default_state(session_id: str, project_root: str) -> dict[str, Any]:
             ],
             "commit_policy": "auto",
             "max_iterations": 20,
+            "reported_tokens": 0,
             "confirmed": False,
         },
         "loop": {

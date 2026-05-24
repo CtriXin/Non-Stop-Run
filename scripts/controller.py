@@ -222,6 +222,14 @@ def close_command(args: argparse.Namespace) -> int:
     return _print(_runtime(args).close(summary=args.summary))
 
 
+def tokens_report_command(args: argparse.Namespace) -> int:
+    return _print(_runtime(args).tokens_report(tokens=args.tokens))
+
+
+def session_stats_command(args: argparse.Namespace) -> int:
+    return _print(_runtime(args).session_stats())
+
+
 def exit_summary_command(args: argparse.Namespace) -> int:
     return _print(_runtime(args).exit_summary(summary=args.summary))
 
@@ -445,6 +453,15 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(close)
     close.add_argument("--summary", default="")
     close.set_defaults(func=close_command)
+
+    tokens_report = sub.add_parser("tokens-report")
+    add_common(tokens_report)
+    tokens_report.add_argument("--tokens", type=int, default=0, help="Tokens to report for this session")
+    tokens_report.set_defaults(func=tokens_report_command)
+
+    stats = sub.add_parser("session-stats")
+    add_common(stats)
+    stats.set_defaults(func=session_stats_command)
 
     exit_summary = sub.add_parser("exit-summary")
     add_common(exit_summary)

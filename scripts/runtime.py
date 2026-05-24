@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+from datetime import datetime
 from html import escape
 from pathlib import Path
 from typing import Any, Optional
@@ -446,6 +447,8 @@ class NSRRuntime:
         state = self._state_or_default()
         state["runtime"]["mode"] = "active"
         state["runtime"]["project_root"] = self.project_root
+        if not state["runtime"].get("started_at"):
+            state["runtime"]["started_at"] = now_iso()
         state["goal"].update(
             {
                 "objective": clean_string(objective),
@@ -894,6 +897,57 @@ class NSRRuntime:
             "result": result,
             "notes_path": notes_path,
             "event": event.get("event", {}),
+        }
+
+    def tokens_report(self, *, tokens: int = 0) -> dict[str, Any]:
+        state = self._state_or_default()
+        state["goal"]["reported_tokens"] = int(state["goal"].get("reported_tokens", 0)) + max(0, int(tokens))
+        self._save(state)
+        return {
+            "ok": True,
+            "action": "tokens_report",
+            "total_tokens": state["goal"]["reported_tokens"],
+        }
+
+    def session_stats(self) -> dict[str, Any]:
+        state = self._state_or_default()
+        started_at = clean_string(state["runtime"].get("started_at", ""))
+        now = now_iso()
+        duration = ""
+        if started_at:
+            try:
+                t_start = datetime.fromisoformat(started_at)
+                t_now = datetime.fromisoformat(now)
+                delta = t_now - t_start
+                total_secs = int(delta.total_seconds())
+                hours, remainder = divmod(total_secs, 3600)
+                minutes, secs = divmod(remainder, 60)
+                if hours > 0:
+                    duration = f"{hours}h {minutes}m {secs}s"
+                elif minutes > 0:
+                    duration = f"{minutes}m {secs}s"
+                else:
+                    duration = f"{secs}s"
+            except Exception:
+                duration = ""
+        iterations = int(state["loop"].get("iteration", 0))
+        tokens = int(state["goal"].get("reported_tokens", 0))
+        event_count = int(state["trace"].get("event_count", 0))
+        milestones_path = self.identity.session_dir / "milestones"
+        milestone_count = len(list(milestones_path.glob("*.md"))) if milestones_path.is_dir() else 0
+        learnings_path = self.identity.session_dir / "learnings.jsonl"
+        learning_count = len(learnings_path.read_text().splitlines()) if learnings_path.is_file() else 0
+        return {
+            "ok": True,
+            "action": "session_stats",
+            "started_at": started_at,
+            "ended_at": now,
+            "duration": duration,
+            "iterations": iterations,
+            "total_tokens": tokens,
+            "events": event_count,
+            "milestones": milestone_count,
+            "learnings": learning_count,
         }
 
     def slice_rollback(self) -> dict[str, Any]:
@@ -1538,7 +1592,10 @@ class NSRRuntime:
         state["trace"]["latest_exit_summary"] = exit_summary
         self._save(state)
         self.event("close", summary or "Closed NSR goal.", state=state)
-        return self._summary("close", state)
+        resp = self._summary("close", state)
+        resp["stats"] = self.session_stats()
+        resp["exit_summary_path"] = exit_summary
+        return resp
 
     def exit_summary(self, *, summary: str = "") -> dict[str, Any]:
         state = self._state_or_default()
@@ -1938,6 +1995,9 @@ class NSRRuntime:
         learnings_path = self.identity.session_dir / "learnings.jsonl"
         if learnings_path.is_file():
             learning_count = len(learnings_path.read_text(encoding="utf-8").splitlines())
+        stats = self.session_stats()
+        duration_str = stats.get("duration", "")
+        tokens = int(state["goal"].get("reported_tokens", 0))
         lines = [
             "# NSR Exit Summary",
             "",
@@ -1949,7 +2009,10 @@ class NSRRuntime:
             f"- Project root: {clean_string(project_root)}",
             f"- Branch: {branch}",
             f"- HEAD: {head}",
+            f"- Started at: {clean_string(state['runtime'].get('started_at', ''))}",
+            f"- Duration: {duration_str}",
             f"- Iterations: {clean_string(state['loop'].get('iteration', 0))}",
+            f"- Tokens reported: {tokens}",
             f"- Latest commit: {clean_string(state['trace'].get('latest_commit', ''))}",
             f"- Latest milestone: {clean_string(state['trace'].get('latest_milestone', ''))}",
             f"- Validation: {clean_string(state['quality'].get('validation_status', ''))} / {clean_string(state['quality'].get('validation_summary', ''))}",
