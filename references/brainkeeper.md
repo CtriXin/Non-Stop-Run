@@ -15,7 +15,7 @@ Brainkeeper owns long-term recovery:
 Use:
 
 ```bash
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py brainkeeper-export \
+python3 <NSR_ROOT>/scripts/controller.py brainkeeper-export \
   --project-root /path/to/repo \
   --write \
   --reason "Phase shipped"

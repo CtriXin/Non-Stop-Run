@@ -16,8 +16,8 @@ NSR 的定位不是替代 `/goal`，而是把同一份 goal contract 落到 agen
 Use:
 
 ```bash
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py goal-contract --write
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py goal-prompt
+python3 <NSR_ROOT>/scripts/controller.py goal-contract --write
+python3 <NSR_ROOT>/scripts/controller.py goal-prompt
 ```
 
 Recommended mapping:

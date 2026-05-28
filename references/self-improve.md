@@ -19,7 +19,7 @@ This borrows three proven local patterns:
 Use:
 
 ```bash
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py learn \
+python3 <NSR_ROOT>/scripts/controller.py learn \
   --source "source name or URL" \
   --summary "one reusable lesson" \
   --evidence "what was observed or verified" \

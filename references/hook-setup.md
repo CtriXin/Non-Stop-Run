@@ -2,12 +2,14 @@
 
 NSR ships separate adapters for Codex and Claude. Both read JSON on stdin and return structured JSON on stdout.
 
+`<NSR_ROOT>` 指当前 `NSR` skill 根目录；本机默认是 `/Users/xin/auto-skills/shared-skills/nsr`。
+
 ## Codex
 
 Use:
 
 ```bash
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/codex_hook.py
+python3 <NSR_ROOT>/scripts/codex_hook.py
 ```
 
 Enable Codex hooks with `--enable hooks` or `[features].hooks = true` in `config.toml`; the old `[features].codex_hooks` flag is deprecated.
@@ -31,7 +33,7 @@ Supported events:
 Print a config/helper snippet:
 
 ```bash
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/install_snippets.py --host codex
+python3 <NSR_ROOT>/scripts/install_snippets.py --host codex
 ```
 
 ## Claude Code
@@ -39,7 +41,7 @@ python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/install_snippets.py --host c
 Use:
 
 ```bash
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/claude_hook.py
+python3 <NSR_ROOT>/scripts/claude_hook.py
 ```
 
 Claude settings example:
@@ -53,7 +55,7 @@ Claude settings example:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/claude_hook.py"
+            "command": "python3 <NSR_ROOT>/scripts/claude_hook.py"
           }
         ]
       }
@@ -64,7 +66,7 @@ Claude settings example:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/claude_hook.py"
+            "command": "python3 <NSR_ROOT>/scripts/claude_hook.py"
           }
         ]
       }
@@ -75,7 +77,7 @@ Claude settings example:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/claude_hook.py"
+            "command": "python3 <NSR_ROOT>/scripts/claude_hook.py"
           }
         ]
       }
@@ -86,7 +88,7 @@ Claude settings example:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/claude_hook.py"
+            "command": "python3 <NSR_ROOT>/scripts/claude_hook.py"
           }
         ]
       }
@@ -97,7 +99,7 @@ Claude settings example:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/claude_hook.py"
+            "command": "python3 <NSR_ROOT>/scripts/claude_hook.py"
           }
         ]
       }
@@ -108,7 +110,7 @@ Claude settings example:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/claude_hook.py"
+            "command": "python3 <NSR_ROOT>/scripts/claude_hook.py"
           }
         ]
       }
@@ -119,7 +121,7 @@ Claude settings example:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/claude_hook.py"
+            "command": "python3 <NSR_ROOT>/scripts/claude_hook.py"
           }
         ]
       }
@@ -130,7 +132,7 @@ Claude settings example:
         "hooks": [
           {
             "type": "command",
-            "command": "python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/claude_hook.py"
+            "command": "python3 <NSR_ROOT>/scripts/claude_hook.py"
           }
         ]
       }
@@ -142,7 +144,7 @@ Claude settings example:
 Print the same snippet:
 
 ```bash
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/install_snippets.py --host claude
+python3 <NSR_ROOT>/scripts/install_snippets.py --host claude
 ```
 
 Claude hook notes:

@@ -33,7 +33,7 @@ The slot owns:
 Use:
 
 ```bash
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py start \
+python3 <NSR_ROOT>/scripts/controller.py start \
   --project-root /path/to/repo \
   --slot nightly-fix \
   --objective "Run a critical bug hunt" \
@@ -42,7 +42,7 @@ python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py start \
 ```
 
 ```bash
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py start \
+python3 <NSR_ROOT>/scripts/controller.py start \
   --project-root /path/to/repo \
   --slot audit \
   --objective "Audit the requested milestone" \

@@ -58,7 +58,7 @@ The first supported gate is `audit`.
 Start a gated run with:
 
 ```bash
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py start \
+python3 <NSR_ROOT>/scripts/controller.py start \
   --project-root /path/to/repo \
   --objective "Finish p100-p110" \
   --completion-gate audit \
