@@ -25,6 +25,7 @@ from state import (
 
 
 SLOTS_DIR = Path(__file__).resolve().parent.parent / "slots"
+STOP_BLOCK_REPEAT_LIMIT = 2
 
 
 def _xml(value: object) -> str:
@@ -367,6 +368,61 @@ class NSRRuntime:
     def _save(self, state: dict[str, Any]) -> None:
         save_state(self.identity, state)
 
+    def _clear_stop_block_guard(self, state: dict[str, Any]) -> bool:
+        loop = state.get("loop") if isinstance(state.get("loop"), dict) else {}
+        had_guard = bool(
+            clean_string(loop.get("stop_block_signature", ""))
+            or int(loop.get("stop_block_count", 0) or 0)
+            or clean_string(loop.get("stop_blocked_at", ""))
+        )
+        if had_guard:
+            loop["stop_block_signature"] = ""
+            loop["stop_block_count"] = 0
+            loop["stop_blocked_at"] = ""
+        return had_guard
+
+    def _stop_block_signature(self, state: dict[str, Any]) -> str:
+        payload = {
+            "objective": state["goal"].get("objective", ""),
+            "slice_id": state["loop"].get("current_slice_id", ""),
+            "slice": state["loop"].get("current_slice", ""),
+            "next_action": state["loop"].get("next_action", ""),
+            "gate_kind": state["gate"].get("kind", ""),
+            "gate_status": state["gate"].get("status", ""),
+        }
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+    def _guarded_stop_block(self, state: dict[str, Any], reason: str) -> dict[str, Any]:
+        loop = state["loop"]
+        signature = self._stop_block_signature(state)
+        prior_signature = clean_string(loop.get("stop_block_signature", ""))
+        prior_count = int(loop.get("stop_block_count", 0) or 0)
+        count = prior_count + 1 if prior_signature == signature else 1
+        loop["stop_block_signature"] = signature
+        loop["stop_block_count"] = count
+        loop["stop_blocked_at"] = now_iso()
+        if count >= STOP_BLOCK_REPEAT_LIMIT:
+            state["loop"]["status"] = "blocked"
+            state["quality"]["blocker"] = (
+                "Repeated NSR stop hook block with unchanged state; "
+                "allowing stop to avoid an infinite hook loop."
+            )
+            self.event(
+                "stop_loop_guard",
+                state["quality"]["blocker"],
+                detail=reason,
+                state=state,
+            )
+            return {
+                "ok": True,
+                "decision": "allow",
+                "guard": "repeated_stop_block",
+                "blocked": True,
+            }
+        self._save(state)
+        return {"ok": True, "decision": "block", "reason": reason}
+
     def current(self, *, auto_create: bool = False) -> dict[str, Any]:
         state = load_state(self.identity)
         if state is None:
@@ -608,13 +664,16 @@ class NSRRuntime:
         state: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         active_state = state or self._state_or_default()
+        clean_kind = clean_string(kind)
+        if clean_kind != "stop_loop_guard":
+            self._clear_stop_block_guard(active_state)
         files = clean_list(touched_files)
         if files:
             current = set(clean_list(active_state["loop"].get("touched_files")))
             active_state["loop"]["touched_files"] = sorted(current.union(files))
         entry = {
             "timestamp": now_iso(),
-            "kind": clean_string(kind),
+            "kind": clean_kind,
             "summary": clean_string(summary),
             "detail": clean_string(detail),
             "slice_id": clean_string(active_state["loop"].get("current_slice_id", "")),
@@ -1523,6 +1582,8 @@ class NSRRuntime:
         state = load_state(self.identity)
         if state is None or state["runtime"]["mode"] != "active":
             return {"ok": True, "action": "noop"}
+        if self._clear_stop_block_guard(state):
+            self._save(state)
         return {
             "ok": True,
             "action": "inject_context",
@@ -1537,22 +1598,21 @@ class NSRRuntime:
             return {"ok": True, "decision": "allow"}
         if state["gate"].get("kind") and state["gate"].get("status") != "pass":
             state["loop"]["next_action"] = "Finish audit completion gate before closing NSR."
-            self._save(state)
-            return {
-                "ok": True,
-                "decision": "block",
-                "reason": self._stop_prompt(
+            return self._guarded_stop_block(
+                state,
+                self._stop_prompt(
                     state,
                     had_assistant_text=bool(last_assistant_message.strip()),
                 ),
-            }
+            )
         if not clean_string(state["loop"].get("next_action", "")):
+            if self._clear_stop_block_guard(state):
+                self._save(state)
             return {"ok": True, "decision": "allow"}
-        return {
-            "ok": True,
-            "decision": "block",
-            "reason": self._stop_prompt(state, had_assistant_text=bool(last_assistant_message.strip())),
-        }
+        return self._guarded_stop_block(
+            state,
+            self._stop_prompt(state, had_assistant_text=bool(last_assistant_message.strip())),
+        )
 
     def precompact(self, *, reason: str = "") -> dict[str, Any]:
         state = self._state_or_default()

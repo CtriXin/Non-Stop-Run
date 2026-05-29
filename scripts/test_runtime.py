@@ -407,6 +407,17 @@ def main() -> int:
         },
     )
     check("claude stop hook blocks active loop", hook_stop.get("decision") == "block")
+    hook_stop_repeat = handle_request(
+        "claude",
+        {
+            "hook_event_name": "Stop",
+            "session_id": "test-session",
+            "cwd": str(repo),
+            "last_assistant_message": "done?",
+        },
+    )
+    check("repeated identical stop hook does not loop forever", hook_stop_repeat.get("continue") is True)
+    check("repeated stop hook marks loop blocked", rt.current()["status"] == "blocked")
 
     closed = rt.close(summary="Finished v0 test.")
     check("close disables mode", closed["mode"] == "disabled")
