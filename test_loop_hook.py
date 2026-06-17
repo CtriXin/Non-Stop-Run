@@ -4,7 +4,9 @@
 Plain stdlib, no pytest needed:  python3 test_loop_hook.py
 """
 import os
+import subprocess
 import tempfile
+from pathlib import Path
 
 import loop_hook as L
 
@@ -23,6 +25,8 @@ class FakeRepo:
 
 def run_checks():
     out = []
+    real_diff_hash = L.diff_hash
+    real_tests_pass = L.tests_pass
 
     def check(name, cond):
         out.append((name, bool(cond)))
@@ -96,6 +100,39 @@ def run_checks():
     fake._hash = "x3"
     allow, _ = L.decide(st, ".")
     check("red death-spiral -> allow stop after MAX_RED", allow is True)
+
+    # ---- real git smoke: state file itself must not defeat no-change brake ----
+    L.diff_hash = real_diff_hash
+    L.tests_pass = real_tests_pass
+    old_state_file = L.STATE_FILE
+    with tempfile.TemporaryDirectory() as d:
+        repo = Path(d)
+        subprocess.run(["git", "-C", d, "init"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", d, "config", "user.name", "test"],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", d, "config", "user.email", "test@example.com"],
+                       check=True, capture_output=True)
+        (repo / "README.md").write_text("# fixture\n", encoding="utf-8")
+        subprocess.run(["git", "-C", d, "add", "README.md"],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", d, "commit", "-m", "init"],
+                       check=True, capture_output=True)
+
+        L.STATE_FILE = ".loop_state_test.json"
+        L.MAX_STEPS, L.MAX_NO_CHANGE, L.MAX_RED, L.TEST_CMD = 99, 2, 99, ""
+        state_path = str(repo / L.STATE_FILE)
+        st = L.load_state(state_path)
+        allow1, _ = L.decide(st, d)
+        L.save_state(state_path, st)
+        st = L.load_state(state_path)
+        allow2, _ = L.decide(st, d)
+        L.save_state(state_path, st)
+        st = L.load_state(state_path)
+        allow3, reason = L.decide(st, d)
+        check("real git state file ignored for stall",
+              allow1 is False and allow2 is False and allow3 is True
+              and "no change" in reason)
+    L.STATE_FILE = old_state_file
 
     return out
 

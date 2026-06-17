@@ -26,6 +26,7 @@ import shlex
 import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 # --- config (override via env) ---------------------------------------------
 MAX_STEPS = int(os.environ.get("LOOP_MAX_STEPS", "30"))
@@ -70,16 +71,60 @@ def save_state(path: str, data: dict) -> None:
     os.replace(tmp, path)
 
 
+def git_root(repo: str) -> str:
+    try:
+        r = subprocess.run(["git", "-C", repo, "rev-parse", "--show-toplevel"],
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return repo
+
+
+def state_rel_paths(repo_root: str, repo: str) -> set[str]:
+    state_path = Path(STATE_FILE)
+    if not state_path.is_absolute():
+        state_path = Path(repo) / state_path
+    try:
+        rel = state_path.resolve().relative_to(Path(repo_root).resolve()).as_posix()
+    except ValueError:
+        return set()
+    return {rel, f"{rel}.tmp"}
+
+
+def filter_status(text: str, ignored: set[str]) -> str:
+    if not ignored:
+        return text
+    kept = []
+    for line in text.splitlines():
+        path = line[3:]
+        if " -> " in path:
+            old, new = path.split(" -> ", 1)
+            if old in ignored or new in ignored:
+                continue
+        elif path in ignored:
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def diff_hash(repo: str) -> str:
     # fingerprint the worktree; git failure must not crash the hook (NSR pit)
+    repo_root = git_root(repo)
+    ignored = state_rel_paths(repo_root, repo)
+    pathspec = ["--", ".", *[f":(exclude){path}" for path in sorted(ignored)]]
     parts = []
-    for args in (["diff", "--no-color"],
-                 ["diff", "--cached", "--no-color"],
+    for args in (["diff", "--no-color", *pathspec],
+                 ["diff", "--cached", "--no-color", *pathspec],
                  ["status", "--porcelain"]):
         try:
-            r = subprocess.run(["git", "-C", repo, *args],
+            r = subprocess.run(["git", "-C", repo_root, *args],
                                capture_output=True, text=True, timeout=30)
-            parts.append(r.stdout)
+            output = r.stdout
+            if args[0] == "status":
+                output = filter_status(output, ignored)
+            parts.append(output)
         except (OSError, subprocess.SubprocessError):
             parts.append("")
     return hashlib.sha256("".join(parts).encode("utf-8", "replace")).hexdigest()

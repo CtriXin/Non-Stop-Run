@@ -5,3 +5,5 @@ __pycache__/
 *.pyc
 .codegraph/
 .xmem/
+.loop_state*.json
+.loop_state*.json.tmp
