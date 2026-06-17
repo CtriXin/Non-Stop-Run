@@ -134,6 +134,18 @@ def run_checks():
               and "no change" in reason)
     L.STATE_FILE = old_state_file
 
+    # ---- regression: untracked file CONTENT change must move the fingerprint.
+    # git diff omits untracked content and status only shows the path, so without
+    # untracked_fingerprint an agent polishing a new file looks stalled. ----
+    with tempfile.TemporaryDirectory() as d:
+        subprocess.run(["git", "-C", d, "init"], check=True, capture_output=True)
+        repo = Path(d)
+        (repo / "fresh.py").write_text("v1\n", encoding="utf-8")
+        h1 = L.diff_hash(d)
+        (repo / "fresh.py").write_text("v2-completely-different\n", encoding="utf-8")
+        h2 = L.diff_hash(d)
+        check("untracked content change moves fingerprint", h1 != h2)
+
     return out
 
 

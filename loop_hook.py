@@ -109,6 +109,34 @@ def filter_status(text: str, ignored: set[str]) -> str:
     return "\n".join(kept)
 
 
+# git diff omits untracked file *content* and status only shows the path, so an
+# agent polishing a not-yet-`git add`ed new file looks "stalled" and trips the
+# no-change brake. Fold each untracked file's path + size + content into the
+# fingerprint so real progress on new files counts as change.
+UNTRACKED_READ_LIMIT = 1_000_000  # bytes hashed per untracked file
+
+
+def untracked_fingerprint(repo_root: str, ignored: set[str]) -> str:
+    try:
+        r = subprocess.run(
+            ["git", "-C", repo_root, "ls-files", "--others", "--exclude-standard", "-z"],
+            capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    h = hashlib.sha256()
+    for rel in sorted(p for p in r.stdout.split("\0") if p and p not in ignored):
+        h.update(rel.encode("utf-8", "replace"))
+        h.update(b"\0")
+        try:
+            with open(Path(repo_root) / rel, "rb") as f:
+                chunk = f.read(UNTRACKED_READ_LIMIT)
+        except OSError:
+            continue
+        h.update(str(len(chunk)).encode())
+        h.update(chunk)
+    return h.hexdigest()
+
+
 def diff_hash(repo: str) -> str:
     # fingerprint the worktree; git failure must not crash the hook (NSR pit)
     repo_root = git_root(repo)
@@ -127,6 +155,7 @@ def diff_hash(repo: str) -> str:
             parts.append(output)
         except (OSError, subprocess.SubprocessError):
             parts.append("")
+    parts.append(untracked_fingerprint(repo_root, ignored))
     return hashlib.sha256("".join(parts).encode("utf-8", "replace")).hexdigest()
 
 
