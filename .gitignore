@@ -3,3 +3,5 @@
 .ai/
 __pycache__/
 *.pyc
+.codegraph/
+.xmem/
