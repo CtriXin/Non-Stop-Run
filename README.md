@@ -23,9 +23,10 @@ NSR 现在是一个极简 Stop hook:agent 想停时默认 `block` 继续写代�
 
 ## 3 条刹车
 
-1. `LOOP_MAX_STEPS`(默认 30):步数上限,防止跑飞烧钱。
+1. `LOOP_MAX_STEPS`(默认 30):**续命次数**上限,防止跑飞烧钱。注意是"agent 想停、被 block 续命"的次数(每触发一次 Stop hook +1),不是工作步数;一次续命里 agent 可能干很多活。
 2. `LOOP_MAX_NO_CHANGE`(默认 3):worktree 连续 N 步没变就停,防无限 block。
 3. `LOOP_TEST_CMD`:测试绿灯就停,红灯继续修;红满 `LOOP_MAX_RED`(默认 5)就停下问人。
+   开销提示:配了它之后,agent **每次想停都会跑一次全套测试**(串行,最长到超时),长测试套件会让每次停顿都明显变慢;只在测试够快时开。
 
 状态写入 `.loop_state.json`,使用 tmp + `os.replace` 原子写;状态损坏时自动重建,
 不让 hook 崩溃。worktree 指纹会忽略 state/tmp 文件,避免 hook 自己写状态导致
