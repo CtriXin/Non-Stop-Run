@@ -10,6 +10,8 @@ metadata:
 
 NSR 是目标驱动的 execution loop。它不是聊天记忆，也不是项目管理系统。
 
+`<NSR_ROOT>` 指当前 `NSR` skill 根目录；本机默认是 `/Users/xin/auto-skills/shared-skills/nsr`。
+
 用它处理这类请求：
 
 - 用户希望 agent 不要频繁停下来问，而是自己选最佳路径继续推进。
@@ -41,7 +43,7 @@ NSR 是目标驱动的 execution loop。它不是聊天记忆，也不是项目�
 ## Quick Start
 
 ```bash
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py start \
+python3 <NSR_ROOT>/scripts/controller.py start \
   --project-root /path/to/repo \
   --objective "Ship the requested feature" \
   --target-phase "Phase D" \
@@ -54,23 +56,23 @@ python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py start \
 
 ```bash
 # 查看当前 NSR 版本
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py version
+python3 <NSR_ROOT>/scripts/controller.py version
 
 # 查看可用 profile slots
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py slots
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py slot-info --name nightly-fix
+python3 <NSR_ROOT>/scripts/controller.py slots
+python3 <NSR_ROOT>/scripts/controller.py slot-info --name nightly-fix
 
 # 查看当前 session
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py current --project-root /path/to/repo
+python3 <NSR_ROOT>/scripts/controller.py current --project-root /path/to/repo
 
 # 导出 Brainkeeper checkpoint payload；默认只生成，不自动写长期记忆
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py brainkeeper-export \
+python3 <NSR_ROOT>/scripts/controller.py brainkeeper-export \
   --project-root /path/to/repo \
   --write \
   --reason "Phase shipped"
 
 # 按 profile slot 启动，例如 bugloop / nightly-fix / audit
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py start \
+python3 <NSR_ROOT>/scripts/controller.py start \
   --project-root /path/to/repo \
   --slot nightly-fix \
   --objective "Run a critical bug hunt" \
@@ -78,7 +80,7 @@ python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py start \
   --role "coordinator"
 
 # 启动 audit/review gate profile
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py start \
+python3 <NSR_ROOT>/scripts/controller.py start \
   --project-root /path/to/repo \
   --slot audit \
   --completion-gate audit \
@@ -88,7 +90,7 @@ python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py start \
   --role "coordinator"
 
 # 记录并检查强制 audit completion gate
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py audit-gate \
+python3 <NSR_ROOT>/scripts/controller.py audit-gate \
   --scope p100-p110 \
   --verdict pass \
   --reviewers 3 \
@@ -98,10 +100,10 @@ python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py audit-gate \
   --evidence .ai/reviews/log/gate-p100-p110.json \
   --residual-risk "Only low-risk gaps remain"
 
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py completion-check
+python3 <NSR_ROOT>/scripts/controller.py completion-check
 
 # 启动 continuity/offduty profile
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py start \
+python3 <NSR_ROOT>/scripts/controller.py start \
   --project-root /path/to/repo \
   --slot continuity \
   --objective "Write a shift-boundary continuation checkpoint" \
@@ -109,33 +111,33 @@ python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py start \
   --role "coordinator"
 
 # 开始一轮 slice
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py begin-slice --summary "Implement search settings"
+python3 <NSR_ROOT>/scripts/controller.py begin-slice --summary "Implement search settings"
 
 # 记录事件
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py event --kind validation --summary "npm test passed"
+python3 <NSR_ROOT>/scripts/controller.py event --kind validation --summary "npm test passed"
 
 # 运行并记录验证命令
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py validate --command "npm test"
+python3 <NSR_ROOT>/scripts/controller.py validate --command "npm test"
 
 # 写 milestone
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py milestone --summary "Search settings shipped" --validation "npm test passed" --next-action "Manual browser smoke"
+python3 <NSR_ROOT>/scripts/controller.py milestone --summary "Search settings shipped" --validation "npm test passed" --next-action "Manual browser smoke"
 
 # 中断/429/压缩后恢复
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py recover
+python3 <NSR_ROOT>/scripts/controller.py recover
 
 # 生成 NSR goal contract，或给 Codex /goal 使用的 prompt
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py goal-contract --write
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py goal-prompt
+python3 <NSR_ROOT>/scripts/controller.py goal-contract --write
+python3 <NSR_ROOT>/scripts/controller.py goal-prompt
 
 # 记录一轮结果，沉淀 notes.md
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py iteration-result \
+python3 <NSR_ROOT>/scripts/controller.py iteration-result \
   --success \
   --summary "Implemented and verified the bounded slice" \
   --key-change "Added traceable iteration notes" \
   --key-learning "No-op slices must stop instead of spinning"
 
 # 记录可复用学习，供真实 loop 场景复盘和后续沉淀
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py learn \
+python3 <NSR_ROOT>/scripts/controller.py learn \
   --source "project postmortem or external reference" \
   --summary "Small verified slices reduce recovery cost" \
   --evidence "Observed in run notes and validation logs" \
@@ -147,14 +149,14 @@ python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py learn \
   --promote-candidate
 
 # 安全 commit gate
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py commit-gate \
+python3 <NSR_ROOT>/scripts/controller.py commit-gate \
   --validation-pass \
   --debugger-pass \
   --auto-commit \
   --message "feat(search): add advanced settings"
 
 # 写 exit summary，不依赖聊天记忆复盘
-python3 /Users/xin/auto-skills/Non-Stop-Run/scripts/controller.py exit-summary \
+python3 <NSR_ROOT>/scripts/controller.py exit-summary \
   --summary "Phase shipped with validation"
 ```
 
