@@ -25,6 +25,7 @@ import os
 import shlex
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -64,11 +65,23 @@ def load_state(path: str) -> dict:
 
 
 def save_state(path: str, data: dict) -> None:
-    # atomic write: tmp + os.replace (NSR pit #4 — old code wrote in place)
-    tmp = f"{path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    # atomic write: tmp + os.replace (NSR pit #4 — old code wrote in place).
+    # The tmp name must be unique per writer: with a fixed "<path>.tmp", two
+    # sessions in the same repo truncate/interleave the same inode (torn JSON ->
+    # load_state() silently resets every brake counter) and the loser's
+    # os.replace() hits FileNotFoundError, crashing the hook.
+    directory, name = os.path.split(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(prefix=f"{name}.", suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def git_root(repo: str) -> str:
@@ -93,6 +106,12 @@ def state_rel_paths(repo_root: str, repo: str) -> set[str]:
     return {rel, f"{rel}.tmp"}
 
 
+def is_ignored(path: str, ignored: set[str]) -> bool:
+    # exact state paths, plus a concurrent writer's in-flight "<state>.<rand>.tmp"
+    return path in ignored or any(
+        path.startswith(f"{rel}.") and path.endswith(".tmp") for rel in ignored)
+
+
 def filter_status(text: str, ignored: set[str]) -> str:
     if not ignored:
         return text
@@ -101,9 +120,9 @@ def filter_status(text: str, ignored: set[str]) -> str:
         path = line[3:]
         if " -> " in path:
             old, new = path.split(" -> ", 1)
-            if old in ignored or new in ignored:
+            if is_ignored(old, ignored) or is_ignored(new, ignored):
                 continue
-        elif path in ignored:
+        elif is_ignored(path, ignored):
             continue
         kept.append(line)
     return "\n".join(kept)
@@ -124,7 +143,7 @@ def untracked_fingerprint(repo_root: str, ignored: set[str]) -> str:
     except (OSError, subprocess.SubprocessError):
         return ""
     h = hashlib.sha256()
-    for rel in sorted(p for p in r.stdout.split("\0") if p and p not in ignored):
+    for rel in sorted(p for p in r.stdout.split("\0") if p and not is_ignored(p, ignored)):
         h.update(rel.encode("utf-8", "replace"))
         h.update(b"\0")
         try:
