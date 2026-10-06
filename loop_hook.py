@@ -82,10 +82,24 @@ def git_root(repo: str) -> str:
     return repo
 
 
-def state_rel_paths(repo_root: str, repo: str) -> set[str]:
+def resolve_state_path(repo: str, repo_root: str | None = None) -> str:
+    """Where the loop state lives for this repo.
+
+    A relative LOOP_STATE_FILE is anchored at the git root, NOT the hook's cwd.
+    Claude Code reports the session's *current* cwd on every Stop event; if the
+    agent `cd`s into a subdir, a cwd-anchored state file splits into one file
+    per directory: step/red counters restart from 0 (the step limit multiplies)
+    and each dir's freshly-written state file shows up as an untracked change
+    in the other's fingerprint, so the no-change brake never trips.
+    """
     state_path = Path(STATE_FILE)
-    if not state_path.is_absolute():
-        state_path = Path(repo) / state_path
+    if state_path.is_absolute():
+        return str(state_path)
+    return str(Path(repo_root or git_root(repo)) / state_path)
+
+
+def state_rel_paths(repo_root: str, repo: str) -> set[str]:
+    state_path = Path(resolve_state_path(repo, repo_root))
     try:
         rel = state_path.resolve().relative_to(Path(repo_root).resolve()).as_posix()
     except ValueError:
@@ -209,7 +223,7 @@ def main() -> int:
     except (json.JSONDecodeError, OSError, ValueError):
         payload = {}
     repo = (isinstance(payload, dict) and payload.get("cwd")) or os.getcwd()
-    state_path = os.path.join(repo, STATE_FILE)
+    state_path = resolve_state_path(repo)
 
     state = load_state(state_path)
     allow_stop, reason = decide(state, repo)
