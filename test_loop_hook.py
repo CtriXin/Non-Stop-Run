@@ -40,6 +40,53 @@ def run_checks():
         check("atomic save/load roundtrip", L.load_state(p)["step_count"] == 7)
         check("tmp file cleaned up", not os.path.exists(p + ".tmp"))
 
+    # ---- regression: concurrent sessions in one repo share the state file.
+    # A fixed "<state>.tmp" made writers truncate/interleave the same inode
+    # (torn JSON -> load_state silently resets every brake) and the loser's
+    # os.replace raised FileNotFoundError (hook crash). ----
+    import json
+    import threading
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, ".loop_state.json")
+        errors, torn = [], []
+
+        def writer(wid):
+            for i in range(300):
+                st = L.fresh_state()
+                st["step_count"] = i
+                st["started_at"] = "x" * ((wid * 37) % 200)  # varied lengths
+                try:
+                    L.save_state(p, st)
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=writer, args=(w,)) for w in range(8)]
+        for t in threads:
+            t.start()
+        while any(t.is_alive() for t in threads):
+            try:
+                with open(p, encoding="utf-8") as f:
+                    json.load(f)
+            except FileNotFoundError:
+                pass
+            except json.JSONDecodeError:
+                torn.append(1)
+        for t in threads:
+            t.join()
+        check("concurrent save_state never crashes", not errors)
+        check("concurrent save_state never leaves torn JSON", not torn)
+        check("concurrent save_state leaves no tmp files",
+              [n for n in os.listdir(d) if n.endswith(".tmp")] == [])
+
+    # another session's in-flight "<state>.<rand>.tmp" is not worktree progress
+    with tempfile.TemporaryDirectory() as d:
+        subprocess.run(["git", "-C", d, "init"], check=True, capture_output=True)
+        Path(d, "README.md").write_text("x\n", encoding="utf-8")
+        h1 = L.diff_hash(d)
+        Path(d, ".loop_state.json.k3j9x_.tmp").write_text("{}", encoding="utf-8")
+        h2 = L.diff_hash(d)
+        check("in-flight state tmp ignored by fingerprint", h1 == h2)
+
     # ---- corrupt / missing state -> fresh, never crash (pit #4/#5) ----
     with tempfile.TemporaryDirectory() as d:
         p = os.path.join(d, "s.json")
